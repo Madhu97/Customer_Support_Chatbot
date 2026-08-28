@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  Evaluation resources for the customer support chatbot.
+
+Resources:
+
+  EvaluationBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  EvaluationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: customer-support-evaluation-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      Policies:
+        - PolicyName: EvaluationS3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt EvaluationBucket.Arn
+                  - !Sub "${EvaluationBucket.Arn}/*"
+
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub "${EvaluationBucket.Arn}/*"
+
+Outputs:
+
+  EvaluationBucketName:
+    Value: !Ref EvaluationBucket
+
+  EvaluationBucketArn:
+    Value: !GetAtt EvaluationBucket.Arn
+
+  EvaluationRoleArn:
+    Value: !GetAtt EvaluationRole.Arn
