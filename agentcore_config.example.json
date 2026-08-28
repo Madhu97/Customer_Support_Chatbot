@@ -1,0 +1,12 @@
+{
+  "region": "us-east-1",
+  "gateway_name": "bug-report-gateway",
+  "gateway_id": "REPLACE_AFTER_SETUP",
+  "gateway_arn": "REPLACE_AFTER_SETUP",
+  "target_name": "bugreports",
+  "lambda_arn": "REPLACE_AFTER_CLOUDFORMATION",
+  "harness_execution_role_arn": "REPLACE_AFTER_CLOUDFORMATION",
+  "harness_id": "REPLACE_AFTER_CREATE_HARNESS",
+  "harness_arn": "REPLACE_AFTER_CREATE_HARNESS",
+  "model_id": "us.amazon.nova-pro-v1:0"
+}
