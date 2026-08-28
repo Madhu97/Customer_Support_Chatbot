@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  Customer support chatbot bug-report tool stack for Amazon Bedrock
+  AgentCore. Creates DynamoDB, Lambda, and IAM roles.
+
+Parameters:
+  TableName:
+    Type: String
+    Default: bug-report-tool-stack-bug-reports
+
+Resources:
+
+  BugReportTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: ticketId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ticketId
+          KeyType: HASH
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: bug-report-tool-stack-lambda-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaLoggingAndDynamoDB
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt BugReportTable.Arn
+
+  BugReportLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: bug-report-tool-stack-create-bug-report
+      Runtime: python3.12
+      Handler: create_bug_report.lambda_handler
+      Timeout: 30
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref BugReportTable
+      Code:
+        ZipFile: |
+          import os
+          import uuid
+          import boto3
+
+          dynamodb = boto3.resource("dynamodb")
+          table = dynamodb.Table(os.environ["TABLE_NAME"])
+
+          def lambda_handler(event, context):
+              required = [
+                  "description",
+                  "stepsToReproduce",
+                  "environment"
+              ]
+
+              missing = [
+                  x for x in required
+                  if not event.get(x)
+              ]
+
+              if missing:
+                  return {
+                      "status": "ERROR",
+                      "message": (
+                          "Missing required fields: "
+                          + ", ".join(missing)
+                      )
+                  }
+
+              ticket_id = (
+                  "BUG-"
+                  + uuid.uuid4().hex[:10].upper()
+              )
+
+              table.put_item(
+                  Item={
+                      "ticketId": ticket_id,
+                      "description": event["description"],
+                      "stepsToReproduce": event["stepsToReproduce"],
+                      "environment": event["environment"],
+                      "status": "OPEN"
+                  }
+              )
+
+              return {
+                  "status": "OPEN",
+                  "ticketId": ticket_id
+              }
+
+  GatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: bug-report-tool-stack-gateway-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock-agentcore.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeBugReportLambda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt BugReportLambda.Arn
+
+  HarnessExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: bug-report-tool-stack-harness-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock-agentcore.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: HarnessAgentCoreAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeGateway
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeHarness
+                  - bedrock-agentcore:InvokeAgentRuntime
+                Resource: "*"
+
+Outputs:
+
+  LambdaArn:
+    Value: !GetAtt BugReportLambda.Arn
+
+  GatewayRoleArn:
+    Value: !GetAtt GatewayRole.Arn
+
+  HarnessExecutionRoleArn:
+    Value: !GetAtt HarnessExecutionRole.Arn
+
+  TableName:
+    Value: !Ref BugReportTable
+
+  LambdaName:
+    Value: !Ref BugReportLambda
